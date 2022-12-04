@@ -1,7 +1,28 @@
 import { Error } from "airtable";
+import { FieldSet } from "airtable/lib/field_set";
 import Record from "airtable/lib/record";
 import { User } from "telegraf/typings/core/types/typegram";
 require("dotenv").config();
+
+interface IATDancer {
+  Id: any;
+  Name: any;
+  Montly_pass: any;
+  Subscription_Ends: any;
+  Balance: any;
+  Status: any;
+  Classes: any[];
+  index: string;
+}
+
+interface IATClass {
+  Id: any;
+  Name: any;
+  Dancers: any[];
+  DancersNames: any[];
+  Date: any;
+  Completed: any;
+}
 
 const Airtable = require("airtable");
 Airtable.configure({
@@ -66,7 +87,7 @@ export const airtableService = {
         });
     });
   },
-  createEvent(): Promise<void> {
+  createEvent(): Promise<string> {
     return new Promise((resolve, reject) => {
       const date = getCurrentDateReversed();
       const time = "18:30:00";
@@ -75,7 +96,7 @@ export const airtableService = {
         [
           {
             fields: {
-              Name: `Class ${date}`,
+              Name: `Class ${date} ${time}`,
               Dancers: [],
               Date: eventDate,
               Completed: false,
@@ -88,24 +109,35 @@ export const airtableService = {
             reject({ message: unknownErrorMessage });
             return;
           }
-          resolve();
+          resolve(`Event created: ${records[0].get("Name")}`);
         }
       );
     });
   },
-  completeEvent(): Promise<void> {
+  async completeEvent(): Promise<void> {
     return new Promise((resolve, reject) => {
       base("Classes")
         .select({
           view: "Current",
         })
-        .firstPage(function (err: any, records: any) {
+        //@ts-ignore
+        .firstPage(async (err: Error, records: Record<IATClass>[]) => {
           if (err) {
             console.error("Error when querying events", err);
             reject({ message: unknownErrorMessage });
             return;
           }
+          if (!records || !records.length || !records[0]) {
+            reject({ message: "There are no active events" });
+            return;
+          }
           const id = records[0].getId();
+          const dancers = records[0].fields.Dancers;
+          if (dancers && dancers.length) {
+            await Promise.all(
+              dancers.map(async (dancer) => await this.withdrawal(dancer))
+            );
+          }
           base("Classes").update(
             [
               {
@@ -139,11 +171,15 @@ export const airtableService = {
             reject({ message: unknownErrorMessage });
             return;
           }
+          if (!records || !records.length || !records[0]) {
+            reject({ message: "There are no active events" });
+            return;
+          }
           const dancers: string[] = records[0].fields.DancersNames;
           const name: string = records[0].fields.Name;
           if (!dancers || !dancers.length) {
-            reject({message: "No one registered."});
-            return
+            reject({ message: "No one registered." });
+            return;
           }
           const message = dancers?.reduce(
             (msg, dancer, idx) => msg + `${idx + 1}. ${dancer} \n `,
@@ -189,7 +225,9 @@ export const airtableService = {
               records.forEach(function (record: any) {
                 if (record.fields.Id === user.id) {
                   if (dancers.includes(record.getId())) {
-                    reject({ message: `User already registered /n/n ${message}` });
+                    reject({
+                      message: `User already registered \n\n ${message}`,
+                    });
                     return;
                   }
                   base("Classes").update(
@@ -236,11 +274,11 @@ export const airtableService = {
           const dancersNames: string[] = records[0].fields.DancersNames;
           const name: string = records[0].fields.Name;
           const message = dancers.length
-          ? dancersNames?.reduce(
-              (msg, dancer, idx) => msg + `${idx + 1}. ${dancer} \n `,
-              `Participants of ${name} \n \n `
-            )
-          : "Well done, you are first \n";
+            ? dancersNames?.reduce(
+                (msg, dancer, idx) => msg + `${idx + 1}. ${dancer} \n `,
+                `Participants of ${name} \n \n `
+              )
+            : "Well done, you are first \n";
           if (!dancers || !dancers.length) {
             reject({ message: "No one registered." });
             return;
@@ -267,7 +305,9 @@ export const airtableService = {
                 (dancer) => dancer === currentUser.getId()
               );
               if (currentUserIndexInEvent < 0) {
-                reject({ message: `You do not take part in this event \n\n ${message}` });
+                reject({
+                  message: `You do not take part in this event \n\n ${message}`,
+                });
                 return;
               }
               dancers.splice(currentUserIndexInEvent, 1);
@@ -295,26 +335,88 @@ export const airtableService = {
   },
   getUserInfo(user: User) {
     return new Promise((resolve, reject) => {
-        base("Dancers")
+      base("Dancers")
         .select({
           view: "Grid view",
-        }).firstPage((err: Error, records: Record<any>[]) => {
-            if (err) {
-                console.error(err)
-                reject({message: unknownErrorMessage})
-                return
-            }
-            const currentUser = records.find(rec => rec.get("Id") === user.id)
-            if (!currentUser) {
-                reject({message: 'This user is not registered'})
-                return
-            }
-            const heading = `${user.username} Info: \n\n`
-            if (currentUser.fields.Montly_pass) {
-                resolve(heading + `Subscription ends ${currentUser.fields?.Subscription_Ends}`)
-            }
-            resolve(heading + `Current Balance: ${currentUser.fields?.Balance}`)
         })
-    })
-  }
+        .firstPage((err: Error, records: Record<any>[]) => {
+          if (err) {
+            console.error(err);
+            reject({ message: unknownErrorMessage });
+            return;
+          }
+          const currentUser = records.find((rec) => rec.get("Id") === user.id);
+          if (!currentUser) {
+            reject({ message: "This user is not registered" });
+            return;
+          }
+          const heading = `${user.username} Info: \n\n`;
+          if (currentUser.fields.Montly_pass) {
+            resolve(
+              heading +
+                `Subscription ends ${currentUser.fields?.Subscription_Ends}`
+            );
+          }
+          resolve(heading + `Current Balance: ${currentUser.fields?.Balance}`);
+        });
+    });
+  },
+  withdrawal(userAtId: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      base("Dancers").find(
+        userAtId,
+        // @ts-ignore
+        (err: Error, record: Record<IATDancer>) => {
+          if (err) {
+            console.error(err);
+            reject({ message: "User not found" });
+            return;
+          }
+          if (record.get("Montly_pass")) {
+            if (Date.parse(record.get("Subscription_Ends")) < Date.now()) {
+              base("Dancers").update(
+                [
+                  {
+                    id: userAtId,
+                    fields: {
+                      Montly_pass: false,
+                    },
+                  },
+                ],
+                function (err: Error, records: Record<any>[]) {
+                  if (err) {
+                    console.error(err);
+                    reject();
+                    return;
+                  }
+                  resolve();
+                  return;
+                }
+              );
+            }
+            resolve();
+          } else {
+            base("Dancers").update(
+              [
+                {
+                  id: userAtId,
+                  fields: {
+                    Balance: record.get("Balance") - 300,
+                  },
+                },
+              ],
+              function (err: Error, records: Record<any>[]) {
+                if (err) {
+                  console.error(err);
+                  reject();
+                  return;
+                }
+                resolve();
+              }
+            );
+          }
+        }
+      );
+    });
+  },
 };
