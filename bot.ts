@@ -2,7 +2,9 @@ import { Context, Markup } from "telegraf";
 import { airtableService } from "./airtable.service";
 const { Telegraf } = require("telegraf");
 require("dotenv").config();
+const { Keyboard } = require("telegram-keyboard");
 
+//#region Messages
 const debugOnlyError = "This command works only in debug mode";
 const notReadyError = "Sorry, this feature is still not ready.";
 const testModeWarn =
@@ -30,6 +32,7 @@ const helpDebug = `Oh, I see, you're something of a programmer yourself.
  \n Here's the list of debug commands:
  \n /debug_withdrawal - test withdrawal after completing events, requires a at user id
  `;
+//#endregion
 
 const debugMode = true;
 
@@ -39,12 +42,21 @@ const isUserAdmin = (id: string | undefined): Boolean => {
 };
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
-bot.start((ctx: Context) =>
-  ctx
-    .reply("Welcome")
-);
+bot.start((ctx: Context) => {
+  const keyboard = Keyboard.make(
+    ["/dance", "/info", "/remove", "/whoami", "/register", "/help"],
+    {
+      pattern: [1, 2, 2],
+    }
+  ).reply();
+  ctx.reply("Welcome", keyboard);
+});
 
-//ADMIN
+bot.action('helpCallback', (ctx: Context) => {
+  ctx.reply("This is callback")
+})
+
+//#region ADMIN
 bot.command("create_event", async (ctx: Context) => {
   if (!isUserAdmin(String(ctx.from?.id))) {
     ctx.reply("You don't have power here");
@@ -82,8 +94,9 @@ bot.command("deny_event", async (ctx: Context) => {
   //     ctx.reply((e as Error).message);
   //   }
 });
+//#endregion
 
-//USER
+//#region USER
 bot.command("register", async (ctx: Context) => {
   const user = ctx.from;
   if (!user) {
@@ -132,8 +145,9 @@ bot.command("whoami", async (ctx: Context) => {
     ctx.reply((e as Error).message + (debugMode ? testModeWarn : ""));
   }
 });
+//#endregion
 
-// DEBUG
+//#region DEBUG
 bot.command("debug_withdrawal", async (ctx: Context) => {
   if (!debugMode) {
     ctx.reply(debugOnlyError);
@@ -152,8 +166,8 @@ bot.command("find_faggot", (ctx: Context) => {
   console.log(ctx.from, "from");
   ctx.reply(ctx.from?.first_name ?? "no user");
 });
+//#endregion
 
-//HELP
 bot.command("debug_help", (ctx: Context) => {
   ctx.reply(helpDebug);
 });
