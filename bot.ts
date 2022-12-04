@@ -1,4 +1,4 @@
-import { Context } from "telegraf";
+import { Context, Markup } from "telegraf";
 import { airtableService } from "./airtable.service";
 const { Telegraf } = require("telegraf");
 require("dotenv").config();
@@ -39,7 +39,10 @@ const isUserAdmin = (id: string | undefined): Boolean => {
 };
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
-bot.start((ctx: Context) => ctx.reply("Welcome"));
+bot.start((ctx: Context) =>
+  ctx
+    .reply("Welcome")
+);
 
 //ADMIN
 bot.command("create_event", async (ctx: Context) => {
@@ -161,3 +164,6 @@ bot.help((ctx: Context) => ctx.reply(help));
 bot.on("sticker", (ctx: Context) => ctx.reply("👍"));
 bot.hears("hi", (ctx: Context) => ctx.reply("Hey there"));
 bot.launch();
+
+process.once("SIGINT", () => bot.stop("SIGINT"));
+process.once("SIGTERM", () => bot.stop("SIGTERM"));

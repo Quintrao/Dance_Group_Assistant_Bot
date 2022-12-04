@@ -90,7 +90,7 @@ export const airtableService = {
   createEvent(): Promise<string> {
     return new Promise((resolve, reject) => {
       const date = getCurrentDateReversed();
-      const time = "18:30:00";
+      const time = "19:30:00";
       const eventDate = new Date(`${date}T${time}`);
       base("Classes").create(
         [
@@ -109,7 +109,7 @@ export const airtableService = {
             reject({ message: unknownErrorMessage });
             return;
           }
-          resolve(`Event created: ${records[0].get("Name")}`);
+          resolve(`Event created: ${records[0]?.get("Name")}`);
         }
       );
     });
@@ -201,6 +201,10 @@ export const airtableService = {
             reject({ message: unknownErrorMessage });
             return;
           }
+          if (!records || !records.length || !records[0]) {
+            reject({ message: 'There are no active events' });
+            return;
+          }
           const dancers: string[] = records[0].fields.Dancers ?? [];
           const dancersNames: string[] = records[0].fields.DancersNames;
           const index = dancers.length || 1;
@@ -216,13 +220,23 @@ export const airtableService = {
             .select({
               view: "Grid view",
             })
-            .firstPage(function (err: any, records: any) {
+            // @ts-ignore
+            .firstPage(function (err: any, records: Record<IATDancer>[]) {
               if (err) {
                 console.error("Error when querying dancers", err);
                 reject({ message: unknownErrorMessage });
                 return;
               }
-              records.forEach(function (record: any) {
+              if (!records) {
+                reject({ message: 'There are no dancers' });
+                return;
+              }
+              const idsArr = records.map(rec => rec.get("Id"))
+              if (!idsArr.includes(user.id)) {
+                reject({ message: unregisteredErrorMessage });
+                return;
+              }
+              records.forEach(function (record) {
                 if (record.fields.Id === user.id) {
                   if (dancers.includes(record.getId())) {
                     reject({
@@ -270,7 +284,15 @@ export const airtableService = {
             reject({ message: unknownErrorMessage });
             return;
           }
+          if (!records || !records?.length || !records[0]) {
+            reject({ message: 'There are no active events' });
+            return;
+          }
           const dancers: string[] = records[0].fields.Dancers;
+          if (!dancers || !dancers.length) {
+            reject({ message: "No one registered." });
+            return;
+          }
           const dancersNames: string[] = records[0].fields.DancersNames;
           const name: string = records[0].fields.Name;
           const message = dancers.length
@@ -279,10 +301,6 @@ export const airtableService = {
                 `Participants of ${name} \n \n `
               )
             : "Well done, you are first \n";
-          if (!dancers || !dancers.length) {
-            reject({ message: "No one registered." });
-            return;
-          }
           const id = records[0].getId();
           base("Dancers")
             .select({
@@ -343,6 +361,10 @@ export const airtableService = {
           if (err) {
             console.error(err);
             reject({ message: unknownErrorMessage });
+            return;
+          }
+          if (!records || !records.length) {
+            reject({ message: "The user is not registered" });
             return;
           }
           const currentUser = records.find((rec) => rec.get("Id") === user.id);
